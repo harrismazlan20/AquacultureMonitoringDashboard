@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UTM Smart Aquaculture - Predictive Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-statistics/7.8.0/simple-statistics.min.js"></script>
+    <style>
+        /* --- LIGHT / CLINICAL THEME --- */
+        :root {
+            --bg-main: #f0f4f8;        
+            --bg-card: #ffffff;        
+            --text-primary: #1a202c;   
+            --text-secondary: #718096;
+            --border-color: #e2e8f0;   
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --btn-bg: #edf2f7; --btn-text: #4a5568; --btn-hover: #cbd5e0;
+        }
+
+        body { 
+            background-color: var(--bg-main); color: var(--text-secondary); 
+            font-family: 'Segoe UI', Roboto, sans-serif; margin: 0; padding: 20px; text-align: center; min-height: 100vh;
+        }
+        
+        .header-container { margin-bottom: 30px; border-bottom: 1px solid #cbd5e0; padding-bottom: 20px; }
+        .logo-img { height: 80px; padding: 10px 20px; } 
+        h1 { margin: 15px 0 5px 0; color: #2c5282; font-size: 2rem; letter-spacing: 1px; text-transform: uppercase; }
+        .subtitle { color: #4a5568; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 2px; font-weight: 600; }
+
+        .dashboard-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; max-width: 1400px; margin: 0 auto; }
+        .card { background-color: var(--bg-card); border-radius: 12px; padding: 20px; box-shadow: var(--shadow); border: 1px solid var(--border-color); text-align: left; position: relative; }
+        .card-full { grid-column: span 2; }
+
+        /* ANIMATIONS & BADGES */
+        @keyframes flashDanger { 0% { background-color: #fff; } 50% { background-color: #fff5f5; border-color: #fc8181; } 100% { background-color: #fff; } }
+        .card-danger { animation: flashDanger 2s infinite; border: 2px solid #e53e3e !important; }
+        
+        .alert-badge { 
+            background: #c53030; color: white; 
+            padding: 10px; border-radius: 8px; 
+            font-size: 1rem; font-weight: bold; 
+            text-align: center;
+            margin-bottom: 15px; 
+            display: none; 
+        }
+
+        /* PREDICTION PILLS */
+        .prediction-pill { display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; font-weight: bold; margin-left: 10px; opacity: 0; transition: opacity 0.5s; }
+        .pred-visible { opacity: 1; }
+        .pred-critical { background: #fed7d7; color: #822727; border: 1px solid #feb2b2; } 
+        .pred-warning { background: #fefcbf; color: #744210; border: 1px solid #faf089; }
+
+        /* STATS ROW */
+        .stats-row { display: flex; justify-content: space-between; background: #f7fafc; padding: 10px 15px; border-radius: 8px; margin: 15px 0; border: 1px solid #edf2f7; }
+        .stat-item { text-align: center; font-size: 0.8rem; color: #718096; font-weight: 600; text-transform: uppercase; }
+        .stat-val { display: block; font-size: 1rem; color: #2d3748; font-weight: 800; margin-top: 2px; }
+
+        /* MAINTENANCE BOX */
+        .maintenance-box { background: #ebf8ff; border: 1px solid #bee3f8; color: #2c5282; padding: 8px; border-radius: 6px; font-size: 0.9rem; font-weight: bold; margin-bottom: 15px; display: flex; align-items: center; justify-content: space-between; }
+        .maint-urgent { background: #fff5f5; border-color: #fc8181; color: #c53030; }
+
+        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid var(--border-color); padding-bottom: 10px; }
+        .card-title { font-size: 1.1rem; font-weight: 700; color: #4a5568; text-transform: uppercase; }
+        .live-value { font-size: 2rem; font-weight: 800; color: var(--text-primary); }
+        .unit { font-size: 1rem; color: var(--text-secondary); font-weight: 500; }
+
+        .trend-line { display: flex; align-items: center; margin-bottom: 10px; }
+        .trend-box { font-size: 0.85rem; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+        .trend-up { color: #e53e3e; } .trend-down { color: #38a169; } .trend-flat { color: #a0aec0; }
+        .level-up { color: #3182ce; } .level-down { color: #dd6b20; }
+
+        /* CONTROLS */
+        .controls { display: flex; gap: 5px; margin-bottom: 10px; justify-content: flex-end; }
+        .btn-time { background: var(--btn-bg); color: var(--btn-text); border: 1px solid var(--border-color); padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; transition: 0.2s; font-weight: 600; }
+        .btn-time:hover { background: var(--btn-hover); color: #2d3748; }
+        .btn-qual.active { background: #805ad5; color: #fff; border-color: #805ad5; }
+        .btn-ph.active { background: #d69e2e; color: #fff; border-color: #d69e2e; }
+        .btn-turb.active { background: #3182ce; color: #fff; border-color: #3182ce; }
+        .btn-temp.active { background: #dd6b20; color: #fff; border-color: #dd6b20; }
+        .btn-level.active { background: #38a169; color: #fff; border-color: #38a169; }
+
+        /* DOWNLOAD BUTTONS */
+        .download-btn {
+            background-color: #2c5282; color: white; border: none; padding: 10px 20px; 
+            border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 0.9rem; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 0 5px; transition: 0.2s;
+        }
+        .download-btn:hover { background-color: #2a4365; transform: translateY(-1px); }
+
+        .status-box { padding: 12px; border-radius: 8px; font-weight: bold; text-align: center; margin-top: 15px; font-size: 1rem; transition: 0.3s; }
+        .status-stable { background: #c6f6d5; color: #22543d; border: 1px solid #9ae6b4; }
+        .status-warn { background: #fefcbf; color: #744210; border: 1px solid #faf089; }
+        .status-danger { background: #fed7d7; color: #822727; border: 1px solid #feb2b2; animation: pulse 2s infinite; }
+        
+        .status-indicator { padding: 5px 10px; border-radius: 15px; font-size: 0.8rem; font-weight: bold; }
+        .status-working { background: #c6f6d5; color: #22543d; border: 1px solid #9ae6b4; }
+        .status-stopped { background: #edf2f7; color: #a0aec0; border: 1px solid #cbd5e0; }
+
+        @media (max-width: 800px) { .dashboard-grid { grid-template-columns: 1fr; } .card-full { grid-column: span 1; } }
+        .chart-wrapper { position: relative; height: 200px; width: 100%; }
+        #logStatus { font-size: 12px; color: #a0aec0; margin-top: 30px; }
+    </style>
+</head>
+<body>
+
+    <div class="header-container">
+        <img class="logo-img" src="logo.png.png" alt="UTM Logo">
+        <h1>INTELLIGENT AQUACULTURE DASHBOARD</h1>
+        <div class="subtitle">Real-time Analytics & Maintenance Prediction</div>
+    </div>
+
+    <div style="margin-bottom: 20px;">
+        <span style="font-weight: 600; color:#4a5568; margin-right: 10px;">DATA LOGS:</span>
+        <button onclick="downloadExcel('1h')" class="download-btn">📥 Last 1 Hour</button>
+        <button onclick="downloadExcel('1w')" class="download-btn">📥 Last 1 Week</button>
+        <button onclick="downloadExcel('all')" class="download-btn" style="background-color: #2b6cb0;">📥 All Data</button>
+    </div>
+
+    <div class="dashboard-grid">
+        
+        <div class="card card-full" id="healthCard">
+            <div id="healthAlert" class="alert-badge">⚠️ CRITICAL CONDITION</div>
+            
+            <div class="card-header"><span class="card-title" style="color: #805ad5;">System Health Score</span><span id="qLive" class="live-value">-- %</span></div>
+            
+            <div id="healthCleanBox" class="maintenance-box">
+                <span>🧹 Recommended Maintenance:</span>
+                <span id="sysCleanTime">Calculating...</span>
+            </div>
+
+            <div class="trend-line">
+                <div class="trend-box" id="qualTrend">Trend: Analyzing...</div>
+                <div id="qualPred" class="prediction-pill"></div>
+            </div>
+            <div class="stats-row">
+                <div class="stat-item">Min Score<span class="stat-val" id="qualMin">--</span></div>
+                <div class="stat-item">Avg Score<span class="stat-val" id="qualAvg">--</span></div>
+                <div class="stat-item">Max Score<span class="stat-val" id="qualMax">--</span></div>
+            </div>
+            <div class="controls">
+                <button class="btn-time btn-qual active" onclick="setRange('qual', 'live', this)">LIVE</button>
+                <button class="btn-time btn-qual" onclick="setRange('qual', '1h', this)">1H</button>
+                <button class="btn-time btn-qual" onclick="setRange('qual', '1w', this)">1W</button>
+            </div>
+            <div class="chart-wrapper"><canvas id="qualityChart"></canvas></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span class="card-title" style="color: #38a169;">Water Level (Distance)</span><span id="levelValue" class="live-value">-- <span class="unit">cm</span></span></div>
+            <div class="trend-line">
+                <div class="trend-box" id="levelTrendBox">Trend: Analyzing...</div>
+                <div id="levelPred" class="prediction-pill"></div>
+            </div>
+            <div id="waterStatusBox" class="status-box status-stable">ANALYZING SYSTEM...</div>
+            <div class="controls" style="margin-top: 15px;">
+                <button class="btn-time btn-level active" onclick="setRange('level', 'live', this)">LIVE</button>
+                <button class="btn-time btn-level" onclick="setRange('level', '1h', this)">1H</button>
+                <button class="btn-time btn-level" onclick="setRange('level', '1w', this)">1W</button>
+            </div>
+            <div class="chart-wrapper"><canvas id="levelChart"></canvas></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span class="card-title" style="color: #3182ce;">Turbidity</span><span id="turbValue" class="live-value">-- <span class="unit">NTU</span></span></div>
+            <div class="trend-line">
+                <div class="trend-box" id="turbTrend">Trend: Analyzing...</div>
+            </div>
+            <div class="controls">
+                <button class="btn-time btn-turb active" onclick="setRange('turb', 'live', this)">LIVE</button>
+                <button class="btn-time btn-turb" onclick="setRange('turb', '1h', this)">1H</button>
+                <button class="btn-time btn-turb" onclick="setRange('turb', '1w', this)">1W</button>
+            </div>
+            <div class="chart-wrapper"><canvas id="turbChart"></canvas></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span class="card-title" style="color: #dd6b20;">Temperature</span><span id="tempValue" class="live-value">-- <span class="unit">°C</span></span></div>
+            <div class="trend-line">
+                <div class="trend-box" id="tempTrend">Trend: Analyzing...</div>
+                <div id="tempPred" class="prediction-pill"></div>
+            </div>
+            <div class="controls">
+                <button class="btn-time btn-temp active" onclick="setRange('temp', 'live', this)">LIVE</button>
+                <button class="btn-time btn-temp" onclick="setRange('temp', '1h', this)">1H</button>
+                <button class="btn-time btn-temp" onclick="setRange('temp', '1w', this)">1W</button>
+            </div>
+            <div class="chart-wrapper"><canvas id="tempChart"></canvas></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span class="card-title" style="color: #d69e2e;">pH Level</span><span id="phValue" class="live-value">--</span></div>
+            <div class="trend-line">
+                <div class="trend-box" id="phTrend">Trend: Analyzing...</div>
+                <div id="phPred" class="prediction-pill"></div>
+            </div>
+            <div class="controls">
+                <button class="btn-time btn-ph active" onclick="setRange('ph', 'live', this)">LIVE</button>
+                <button class="btn-time btn-ph" onclick="setRange('ph', '1h', this)">1H</button>
+                <button class="btn-time btn-ph" onclick="setRange('ph', '1w', this)">1W</button>
+            </div>
+            <div class="chart-wrapper"><canvas id="phChart"></canvas></div>
+        </div>
+
+        <div class="card">
+            <div class="card-header"><span class="card-title">Main Pump</span><span id="mainStatus" class="status-indicator status-stopped">LOADING</span></div>
+            <div class="chart-wrapper" style="height: 100px;"><canvas id="mainChart"></canvas></div>
+            <div style="margin-top: 10px; border-top: 1px solid #e2e8f0; padding-top: 10px;">
+                <div class="card-header" style="margin-bottom:0; border:none; padding:0;"><span class="card-title">Spare Pump</span><span id="spareStatus" class="status-indicator status-stopped">LOADING</span></div>
+                <div class="chart-wrapper" style="height: 100px;"><canvas id="spareChart"></canvas></div>
+            </div>
+        </div>
+
+    </div>
+    
+    <div id="logStatus">Connecting to System...</div>
+
+    <script>
+        // ================= CONFIGURATION =================
+        const ESP_IP = "http://10.36.67.14/data"; // <--- CHECK IP
+        const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyC-ikwDV29s6OiT1hGZ1K4Ws85xQhgH_uPJ9OC09pmOTZhcm6n5ffsbMhsylBj0Qdl/exec"; 
+
+        // Variables
+        let phChart, turbChart, tempChart, levelChart, qualityChart, mainChart, spareChart;
+        let masterHistory = []; 
+        let views = { ph: 'live', turb: 'live', temp: 'live', level: 'live', qual: 'live' };
+        
+        // Analysis Vars
+        let levelHistory = []; 
+        let trendBuffers = { ph: [], ntu: [], temp: [], level: [], qual: [] };
+
+        const LIMITS = {
+            ph: { low: 5.0, high: 9.0 },
+            temp: { low: 20.0, high: 33.0 },
+            ntu: { high: 1000 }, 
+            qual: { low: 50 }
+        };
+
+        // ================= CHART SETUP =================
+        function initCharts() {
+            const getOpts = (min, max, step) => ({
+                responsive: true, maintainAspectRatio: false, animation: false,
+                elements: { point: { radius: 0 } },
+                scales: { 
+                    x: { type: 'time', time: { unit: 'second' }, display: true, ticks: { maxTicksLimit: 5, color: '#a0aec0' }, grid: { display: false } }, 
+                    y: { min: min, max: max, ticks: { stepSize: step, color: '#a0aec0' }, grid: { color: '#edf2f7' } } 
+                },
+                plugins: { legend: { display: false } }
+            });
+            const pumpOpts = getOpts(0, 1.2, 1);
+            pumpOpts.scales.y.ticks.callback = v => v===1?'ON':'OFF';
+            pumpOpts.scales.x.display = false; 
+
+            phChart = new Chart(document.getElementById('phChart'), { type: 'line', data: { datasets: [{ borderColor: '#d69e2e', backgroundColor: '#d69e2e20', borderWidth: 2, fill: true, data: [] }] }, options: getOpts(0, 14) });
+            turbChart = new Chart(document.getElementById('turbChart'), { type: 'line', data: { datasets: [{ borderColor: '#3182ce', backgroundColor: '#3182ce20', borderWidth: 2, fill: true, data: [] }] }, options: getOpts(0, 1100) });
+            tempChart = new Chart(document.getElementById('tempChart'), { type: 'line', data: { datasets: [{ borderColor: '#dd6b20', backgroundColor: '#dd6b2020', borderWidth: 2, fill: true, data: [] }] }, options: getOpts(15, 40) });
+            levelChart = new Chart(document.getElementById('levelChart'), { type: 'line', data: { datasets: [{ borderColor: '#38a169', backgroundColor: '#38a16920', borderWidth: 2, fill: true, data: [] }] }, options: getOpts(0, 30) });
+            qualityChart = new Chart(document.getElementById('qualityChart'), { type: 'line', data: { datasets: [{ borderColor: '#805ad5', backgroundColor: '#805ad520', borderWidth: 2, fill: true, data: [] }] }, options: getOpts(0, 100) });
+            mainChart = new Chart(document.getElementById('mainChart'), { type: 'line', data: { datasets: [{ borderColor: '#38a169', borderWidth: 2, stepped: true, data: [] }] }, options: pumpOpts });
+            spareChart = new Chart(document.getElementById('spareChart'), { type: 'line', data: { datasets: [{ borderColor: '#dd6b20', borderWidth: 2, stepped: true, data: [] }] }, options: pumpOpts });
+        }
+
+        function setRange(type, mode, btn) {
+            views[type] = mode;
+            document.querySelectorAll(`.btn-${type}`).forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            refreshCharts();
+        }
+
+        function refreshCharts() {
+            const now = Date.now();
+            const getFiltered = (mode, key) => {
+                let ms = 60000; 
+                if (mode === '1h') ms = 3600000;
+                else if (mode === '1w') ms = 604800000;
+                return masterHistory.filter(d => d.time > (now - ms)).map(d => ({ x: d.time, y: d[key] }));
+            };
+            const updateC = (chart, key, viewMode) => {
+                chart.data.datasets[0].data = getFiltered(viewMode, key);
+                chart.update();
+            };
+            updateC(phChart, 'ph', views.ph);
+            updateC(turbChart, 'ntu', views.turb);
+            updateC(tempChart, 'temp', views.temp);
+            updateC(levelChart, 'level', views.level);
+            updateC(qualityChart, 'qual', views.qual);
+            updateC(mainChart, 'mainVal', 'live');
+            updateC(spareChart, 'spareVal', 'live');
+        }
+
+        // ================= STATS CALCULATION =================
+        function updateStats() {
+            if (masterHistory.length === 0) return;
+            const vals = masterHistory.map(d => d.qual);
+            const min = Math.min(...vals);
+            const max = Math.max(...vals);
+            const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+            document.getElementById(`qualMin`).innerText = min.toFixed(0);
+            document.getElementById(`qualMax`).innerText = max.toFixed(0);
+            document.getElementById(`qualAvg`).innerText = avg.toFixed(0);
+        }
+
+        // ================= PREDICTIONS =================
+        function predictCritical(currentVal, slope, highLimit, lowLimit) {
+            if (isNaN(currentVal) || isNaN(slope)) return null;
+            if (Math.abs(slope) < 0.001) return null; 
+            
+            let target = 0;
+            if (slope > 0) { 
+                if (!highLimit) return null;
+                target = highLimit;
+                if (currentVal >= target) return "CRITICAL NOW"; 
+            } else { 
+                if (!lowLimit) return null;
+                target = lowLimit;
+                if (currentVal <= target) return "CRITICAL NOW"; 
+            }
+            const seconds = Math.abs((target - currentVal) / slope);
+            
+            if (!isFinite(seconds) || isNaN(seconds)) return null; 
+            
+            if (seconds > 3600) return "Safe (>1hr)"; 
+            if (seconds < 60) return `⚠️ ${seconds.toFixed(0)} sec`;
+            return `⚠️ ${(seconds/60).toFixed(0)} min`;
+        }
+
+        function updatePredictionBadge(id, text) {
+            const el = document.getElementById(id);
+            if (!text || text.includes("Safe")) {
+                el.className = "prediction-pill"; el.innerText = "";
+            } else {
+                el.innerText = text;
+                el.classList.add("pred-visible");
+                if (text.includes("sec") || text.includes("NOW")) {
+                    el.className = "prediction-pill pred-critical pred-visible";
+                } else {
+                    el.className = "prediction-pill pred-warning pred-visible";
+                }
+            }
+        }
+
+        function predictSystemCleaning(currentQual, slope) {
+            const el = document.getElementById('sysCleanTime');
+            const box = document.getElementById('healthCleanBox');
+            const TARGET_CRITICAL_HEALTH = 40;
+
+            if (typeof currentQual !== 'number' || isNaN(currentQual) || isNaN(slope)) {
+                el.innerText = "Calibrating..."; return;
+            }
+
+            if (slope >= -0.001) {
+                el.innerText = "System Stable";
+                box.className = "maintenance-box";
+                return;
+            }
+
+            const secondsToCritical = (TARGET_CRITICAL_HEALTH - currentQual) / slope;
+
+            if (!isFinite(secondsToCritical)) {
+                el.innerText = "System Stable"; 
+                box.className = "maintenance-box";
+                return;
+            }
+
+            if (secondsToCritical <= 0) {
+                el.innerText = "⚠️ MAINTENANCE REQUIRED NOW!";
+                box.className = "maintenance-box maint-urgent";
+            } 
+            else if (secondsToCritical < 3600) {
+                el.innerText = `In ${(secondsToCritical/60).toFixed(0)} Minutes`;
+                box.className = "maintenance-box maint-urgent";
+            }
+            else if (secondsToCritical < 86400) {
+                el.innerText = `In ${(secondsToCritical/3600).toFixed(1)} Hours`;
+                box.className = "maintenance-box";
+            }
+            else {
+                el.innerText = `In ${(secondsToCritical/86400).toFixed(1)} Days`;
+                box.className = "maintenance-box";
+            }
+        }
+
+        function updateTrends(ph, ntu, temp, level, qual) {
+            const calcSlope = (key, value) => {
+                trendBuffers[key].push([trendBuffers[key].length, value]);
+                if (trendBuffers[key].length > 15) trendBuffers[key].shift(); 
+                if (trendBuffers[key].length < 5) return 0; 
+                return ss.linearRegression(trendBuffers[key]).m; 
+            };
+
+            const mPh = calcSlope('ph', ph);
+            const mTemp = calcSlope('temp', temp);
+            const mNtu = calcSlope('ntu', ntu);
+            const mLev = calcSlope('level', level);
+            const mQual = calcSlope('qual', qual);
+
+            const updateUI = (elId, slope, upBad=true) => {
+                const el = document.getElementById(elId);
+                let upClass = upBad ? "trend-up" : "trend-down"; 
+                let downClass = upBad ? "trend-down" : "trend-up"; 
+                if (slope > 0.005) { el.innerHTML = "↗ Rising"; el.className = `trend-box ${upClass}`; }
+                else if (slope < -0.005) { el.innerHTML = "↘ Falling"; el.className = `trend-box ${downClass}`; }
+                else { el.innerHTML = "→ Stable"; el.className = "trend-box trend-flat"; }
+            };
+
+            updateUI('phTrend', mPh, true);
+            updateUI('tempTrend', mTemp, true);
+            updateUI('qualTrend', mQual, false); 
+            
+            const ntuEl = document.getElementById('turbTrend');
+            if (mNtu > 2) { ntuEl.innerHTML = "↗ Dirtying"; ntuEl.className = "trend-box trend-up"; }
+            else if (mNtu < -2) { ntuEl.innerHTML = "↘ Clearing"; ntuEl.className = "trend-box trend-down"; }
+            else { ntuEl.innerHTML = "→ Stable"; ntuEl.className = "trend-box trend-flat"; }
+
+            const levEl = document.getElementById('levelTrendBox');
+            if (mLev < -0.05) { levEl.innerHTML = "↘ Rapid Loss"; levEl.className = "trend-box level-down"; }
+            else if (mLev > 0.01) { levEl.innerHTML = "↗ Filling"; levEl.className = "trend-box level-up"; }
+            else { levEl.innerHTML = "→ Stable"; levEl.className = "trend-box trend-flat"; }
+
+            updatePredictionBadge("phPred", predictCritical(ph, mPh, LIMITS.ph.high, LIMITS.ph.low));
+            updatePredictionBadge("tempPred", predictCritical(temp, mTemp, LIMITS.temp.high, LIMITS.temp.low));
+            updatePredictionBadge("qualPred", predictCritical(qual, mQual, null, LIMITS.qual.low));
+            
+            predictSystemCleaning(qual, mQual);
+        }
+
+        // ================= WATER STATUS LOGIC (UPDATED) =================
+        function analyzeWaterStatus(currentLevel) {
+            const now = Date.now();
+            
+            // 1. Update History Buffer
+            levelHistory.push({ t: now, v: currentLevel });
+            levelHistory = levelHistory.filter(d => d.t > now - 30000); 
+            
+            const box = document.getElementById('waterStatusBox');
+            
+            if (levelHistory.length < 5) {
+                box.innerText = "CALIBRATING...";
+                box.className = "status-box status-warn";
+                return;
+            }
+
+            const sum = levelHistory.reduce((a, b) => a + b.v, 0);
+            const avgLevel = sum / levelHistory.length;
+
+            // --- PRIORITY 1: CHECK ABSOLUTE LEVELS ---
+            
+            // Distance < 13cm = Water is too close/high = Overflow
+            if (avgLevel < 13.0) {
+                box.innerText = "⚠️ CRITICAL: WATER OVERFLOW";
+                box.className = "status-box status-danger";
+                return;
+            }
+
+            // Distance > 18cm = Water is too far/low = Not Enough Water
+            if (avgLevel > 18.0) {
+                box.innerText = "💧 ALERT: LOW WATER LEVEL";
+                box.className = "status-box status-danger";
+                return;
+            }
+
+            // --- PRIORITY 2: CHECK LEAKS (Only if level is safe) ---
+            const oldest = levelHistory[0];
+            const newest = levelHistory[levelHistory.length - 1];
+            const rateOfChange = (newest.v - oldest.v) / ((newest.t - oldest.t) / 1000); 
+
+            if (rateOfChange > 0.1) { 
+                 box.innerText = "🚨 CRITICAL: LEAK DETECTED";
+                 box.className = "status-box status-danger";
+            } else if (rateOfChange > 0.005) {
+                 box.innerText = "📉 NORMAL EVAPORATION";
+                 box.className = "status-box status-warn";
+            } else {
+                 box.innerText = "✅ LEVEL OPTIMAL (13-18cm)";
+                 box.className = "status-box status-stable";
+            }
+        }
+
+        // ================= MAIN LOOP =================
+        async function fetchData() {
+            try {
+                const res = await fetch(ESP_IP);
+                const data = await res.json();
+                const now = Date.now();
+                
+                let ph = parseFloat(data.ph);
+                let ntu = parseInt(data.ntu);
+                let temp = parseFloat(data.temp);
+                let level = parseFloat(data.level);
+                
+                if (isNaN(ph)) ph = 7.0; 
+                if (isNaN(ntu)) ntu = 0;
+                if (isNaN(temp)) temp = 25.0;
+                if (isNaN(level)) level = 20.0;
+
+                const mainVal = data.main.includes("WORKING") ? 1 : 0;
+                const spareVal = data.spare.includes("WORKING") ? 1 : 0;
+                
+                let ntuPenalty = 0;
+                if (ntu > 700) {
+                    ntuPenalty = ((ntu - 700) / 300) * 100;
+                }
+                if (ntuPenalty > 100) ntuPenalty = 100;
+                if (ntuPenalty < 0) ntuPenalty = 0;
+
+                const phDiff = Math.abs(ph - 7.0);
+                const qual = (Math.max(0, 100 - (phDiff * 25)) + Math.max(0, 100 - ntuPenalty)) / 2;
+
+                const healthCard = document.getElementById('healthCard');
+                const alertBadge = document.getElementById('healthAlert');
+                if (qual < 50) {
+                    healthCard.classList.add('card-danger');
+                    alertBadge.style.display = 'block';
+                    document.getElementById('qLive').style.color = '#c53030';
+                } else {
+                    healthCard.classList.remove('card-danger');
+                    alertBadge.style.display = 'none';
+                    document.getElementById('qLive').style.color = '#1a202c';
+                }
+
+                document.getElementById('phValue').innerText = ph.toFixed(1);
+                document.getElementById('turbValue').innerText = ntu + " NTU";
+                document.getElementById('tempValue').innerText = temp.toFixed(1) + " °C";
+                document.getElementById('levelValue').innerText = level.toFixed(1) + " cm";
+                document.getElementById('qLive').innerText = qual.toFixed(0) + " %";
+
+                const setSt = (id, st) => { 
+                    const el = document.getElementById(id); 
+                    el.innerText = st; 
+                    el.className = st.includes("WORKING") ? "status-indicator status-working" : "status-indicator status-stopped"; 
+                };
+                setSt("mainStatus", data.main); 
+                setSt("spareStatus", data.spare);
+
+                updateTrends(ph, ntu, temp, level, qual);
+                analyzeWaterStatus(level);
+                masterHistory.push({ time: now, ph: ph, ntu: ntu, temp: temp, level: level, qual: qual, mainVal: mainVal, spareVal: spareVal });
+                
+                updateStats();
+                refreshCharts();
+
+            } catch (e) { console.error("Fetch Error:", e); }
+        }
+
+        // ================= EXCEL DOWNLOAD LOGIC =================
+        function downloadExcel(range) {
+            if (masterHistory.length === 0) {
+                alert("No data collected yet!"); return;
+            }
+
+            const now = Date.now();
+            let duration = 0;
+            let filename = "Log_";
+            let filteredData = [];
+
+            if (range === 'all') {
+                filename += "Master_History";
+                filteredData = masterHistory; 
+            } else {
+                if (range === '1h') {
+                    duration = 3600000; // 1 Hour
+                    filename += "Last_Hour";
+                } else if (range === '1w') {
+                    duration = 604800000; // 1 Week
+                    filename += "Last_Week";
+                }
+                filteredData = masterHistory.filter(row => (now - row.time) < duration);
+            }
+
+            if (filteredData.length === 0) {
+                alert("Not enough data recorded for this time range yet!");
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Timestamp,Time,pH,NTU,Temp,Level,Quality,MainPump,SparePump\n";
+            
+            filteredData.forEach(function(row) {
+                let d = new Date(row.time);
+                let rowStr = `${row.time},${d.toLocaleTimeString()},${row.ph.toFixed(2)},${row.ntu},${row.temp.toFixed(2)},${row.level.toFixed(2)},${row.qual.toFixed(0)},${row.mainVal},${row.spareVal}`;
+                csvContent += rowStr + "\r\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", filename + "_" + new Date().toISOString().slice(0,10) + ".csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function logToGoogle() {
+            if (masterHistory.length === 0) return;
+            const last = masterHistory[masterHistory.length - 1];
+            const url = `${GOOGLE_SCRIPT_URL}?ph=${last.ph}&ntu=${last.ntu}&temp=${last.temp}&level=${last.level}&quality=${last.qual.toFixed(0)}`;
+            fetch(url, { mode: 'no-cors' }).then(() => { 
+                document.getElementById('logStatus').innerText = `✅ Logged to Cloud at ${new Date().toLocaleTimeString()}`; 
+            }).catch(e => console.error(e));
+        }
+
+        initCharts();
+        setInterval(fetchData, 1000); fetchData();
+        setInterval(logToGoogle, 60000); 
+    </script>
+</body>
+</html>
